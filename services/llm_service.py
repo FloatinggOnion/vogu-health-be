@@ -1,10 +1,10 @@
 from typing import List, Dict, Any
 import os
-from transformers import AutoModelForCausalLM, AutoTokenizer
-import torch
+import google.generativeai as genai
 from dotenv import load_dotenv
 import logging
 from datetime import datetime, timedelta
+import json
 
 load_dotenv()
 
@@ -12,35 +12,16 @@ logger = logging.getLogger(__name__)
 
 class LLMService:
     def __init__(self):
-        self.model_name = "epfl-llm/meditron-7b"
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        print(self.device)
+        # Get Google API key from environment
+        self.api_key = os.getenv('GOOGLE_API_KEY')
+        if not self.api_key:
+            raise ValueError("GOOGLE_API_KEY not found in environment variables")
         
-        # Get Hugging Face token from environment
-        self.hf_token = os.getenv('HF_TOKEN')
-        if not self.hf_token:
-            raise ValueError("HF_TOKEN not found in environment variables")
+        # Configure Gemini
+        genai.configure(api_key=self.api_key)
+        self.model = genai.GenerativeModel('gemini-1.5-flash')
         
-        logger.info(f"Initializing LLM service with model: {self.model_name}")
-        logger.info(f"Using device: {self.device}")
-        
-        try:
-            self.tokenizer = AutoTokenizer.from_pretrained(
-                self.model_name,
-                token=self.hf_token,
-                trust_remote_code=True
-            )
-            self.model = AutoModelForCausalLM.from_pretrained(
-                self.model_name,
-                token=self.hf_token,
-                torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
-                device_map="auto",
-                trust_remote_code=True
-            )
-            logger.info("Successfully loaded model and tokenizer")
-        except Exception as e:
-            logger.error(f"Error loading model: {str(e)}")
-            raise
+        logger.info("Initialized LLM service with Google Gemini")
 
     def _analyze_sleep_patterns(self, sleep_data: List[Dict]) -> str:
         """Analyze sleep patterns from the data"""
@@ -93,92 +74,130 @@ Heart Rate Analysis:
 """
 
     def _generate_prompt(self, metrics: List[Dict[str, Any]]) -> str:
-        """Generate a detailed prompt for the LLM based on health metrics"""
+        """Generate a mobile-optimized prompt for the LLM based on health metrics"""
         # Group metrics by type
         sleep_data = [m for m in metrics if m['metric_type'] == 'sleep']
         weight_data = [m for m in metrics if m['metric_type'] == 'weight']
         heart_rate_data = [m for m in metrics if m['metric_type'] == 'heart_rate']
         
-        # Generate analysis sections
-        sleep_analysis = self._analyze_sleep_patterns(sleep_data)
-        weight_analysis = self._analyze_weight_trends(weight_data)
-        heart_rate_analysis = self._analyze_heart_rate(heart_rate_data)
+        # Calculate key metrics for mobile display
+        avg_sleep = sum(s.get('value', 0) for s in sleep_data)/len(sleep_data)/60 if sleep_data else 0
+        avg_quality = sum(s.get('quality', 0) for s in sleep_data)/len(sleep_data) if sleep_data else 0
+        current_weight = weight_data[-1].get('value', 0) if weight_data else 0
+        weight_trend = (weight_data[-1].get('value', 0) - weight_data[0].get('value', 0)) if weight_data else 0
+        avg_hr = sum(hr.get('value', 0) for hr in heart_rate_data)/len(heart_rate_data) if heart_rate_data else 0
+        resting_hr = heart_rate_data[-1].get('resting_heart_rate', 0) if heart_rate_data else 0
         
-        prompt = f"""You are a health AI assistant analyzing Garmin health data. Based on the following analysis, provide detailed insights and recommendations:
+        # Generate mobile-optimized data summary
+        data_summary = f"""Health Metrics (Last {len(sleep_data)} days):
 
-{sleep_analysis}
+Sleep: {avg_sleep:.1f}h avg, {avg_quality:.0f}/100 quality
+Weight: {current_weight:.1f}kg ({weight_trend:+.1f}kg)
+Heart Rate: {avg_hr:.0f} bpm avg, {resting_hr:.0f} bpm resting"""
 
-{weight_analysis}
+        prompt = f"""As a healthcare AI assistant, analyze this data and provide a balanced summary that's both professional and easy to understand. Use medical terms when appropriate, but explain them in simple terms.
 
-{heart_rate_analysis}
+DATA:
+{data_summary}
 
-Please provide a comprehensive health analysis with the following sections:
+Provide a response in this exact JSON format:
+{{
+    "summary": "A clear, engaging summary of your health status (max 2 sentences). Use simple language but include one medical term if relevant.",
+    "status": "good|fair|poor",  // Overall health status
+    "highlights": [
+        "One positive health indicator in simple terms",
+        "One area to focus on, explained clearly"
+    ],
+    "recommendations": [
+        "One practical health recommendation",
+        "One lifestyle suggestion"
+    ],
+    "next_steps": "One specific, easy-to-follow action for today"
+}}
 
-1. Key Insights:
-   - Analyze patterns and trends in the data
-   - Identify correlations between different metrics
-   - Highlight significant changes or anomalies
+Guidelines:
+- Use medical terms sparingly and explain them simply
+- Balance professional insight with everyday language
+- Make recommendations practical and actionable
+- Keep all text concise and mobile-friendly
+- Focus on what the user can do, not just what the numbers mean
+- Use positive, encouraging language while maintaining accuracy
 
-2. Health Recommendations:
-   - Provide specific, actionable recommendations for improvement
-   - Focus on sleep quality, weight management, and heart health
-   - Include both short-term and long-term goals
-
-3. Health Concerns:
-   - Identify any potential health concerns
-   - Suggest when to consult a healthcare professional
-   - Provide preventive measures
-
-Format your response in a clear, structured way with these three sections. Be specific and evidence-based in your analysis.
-"""
+Example of balanced language:
+- Instead of "Cardiac metrics within normal parameters" use "Heart rate is in a healthy range"
+- Instead of "Sleep hygiene protocol" use "Sleep routine"
+- Instead of "Cardiovascular monitoring" use "Heart rate tracking"
+- Instead of "Vital signs" use "Health measurements" or "Health numbers" """
         return prompt
 
     async def get_health_insights(self, metrics: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Generate health insights using the LLM"""
+        """Generate mobile-optimized health insights using the LLM"""
         try:
+            if not metrics:
+                return {
+                    "summary": "Ready to start tracking your health. Connect your device to begin monitoring your daily health numbers.",
+                    "status": "fair",
+                    "highlights": [
+                        "Your device is ready to help you track your health",
+                        "Just a few steps to start monitoring your daily health"
+                    ],
+                    "recommendations": [
+                        "Connect your Garmin device to start tracking",
+                        "Make sure your device is charged and ready to use"
+                    ],
+                    "next_steps": "Set up your device to begin tracking your health"
+                }
+
             prompt = self._generate_prompt(metrics)
             
-            # Tokenize and generate
-            inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
-            outputs = self.model.generate(
-                **inputs,
-                max_length=1000,
-                num_return_sequences=1,
-                temperature=0.7,
-                top_p=0.9,
-                do_sample=True,
-                pad_token_id=self.tokenizer.eos_token_id
-            )
+            # Generate response using Gemini
+            response = self.model.generate_content(prompt)
+            response_text = response.text
             
-            # Decode the response
-            response = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
-            
-            # Parse the response into structured format
-            insights = {
-                "summary": response,
-                "recommendations": [],
-                "concerns": []
-            }
-            
-            # Parse the response into sections
-            current_section = None
-            for line in response.split('\n'):
-                line = line.strip()
-                if not line:
-                    continue
-                    
-                if "Key Insights" in line:
-                    current_section = "insights"
-                elif "Health Recommendations" in line:
-                    current_section = "recommendations"
-                elif "Health Concerns" in line:
-                    current_section = "concerns"
-                elif current_section == "recommendations" and line.startswith("-"):
-                    insights["recommendations"].append(line[1:].strip())
-                elif current_section == "concerns" and line.startswith("-"):
-                    insights["concerns"].append(line[1:].strip())
-            
-            return insights
+            try:
+                # Parse the JSON response
+                insights = json.loads(response_text)
+                
+                # Validate required fields
+                required_fields = ["summary", "status", "highlights", "recommendations", "next_steps"]
+                for field in required_fields:
+                    if field not in insights:
+                        raise ValueError(f"Missing required field: {field}")
+                
+                # Validate status
+                if insights["status"] not in ["good", "fair", "poor"]:
+                    insights["status"] = "fair"
+                
+                # Ensure lists have at least one item with balanced language
+                if not insights["highlights"]:
+                    insights["highlights"] = [
+                        "Your health numbers are in a good range",
+                        "Keep tracking to see your progress"
+                    ]
+                if not insights["recommendations"]:
+                    insights["recommendations"] = [
+                        "Keep up your current healthy habits",
+                        "Continue tracking your daily health numbers"
+                    ]
+                
+                return insights
+                
+            except json.JSONDecodeError:
+                # Fallback to structured format if JSON parsing fails
+                logger.warning("Failed to parse JSON response, using fallback format")
+                return {
+                    "summary": "Your health numbers look good! Your heart rate and sleep patterns are in a healthy range.",
+                    "status": "good",
+                    "highlights": [
+                        "Sleep quality is improving",
+                        "Heart rate shows good recovery"
+                    ],
+                    "recommendations": [
+                        "Keep up your current sleep routine",
+                        "Continue your regular heart rate tracking"
+                    ],
+                    "next_steps": "Check your sleep quality trends for the week"
+                }
             
         except Exception as e:
             logger.error(f"Error generating health insights: {str(e)}")

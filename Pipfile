@@ -7,14 +7,11 @@ name = "pypi"
 garmindb = "*"
 fastapi = {extras = ["standard"], version = "*"}
 python-dotenv = "*"
-transformers = "*"
-torch = "*"
 uvicorn = "*"
 pydantic = "*"
 numpy = "<2"
 idbutils = "*"
-pymongo = {extras = ["srv"], version = "*"}
-accelerate = "*"
+google-generativeai = "*"
 
 [dev-packages]
 

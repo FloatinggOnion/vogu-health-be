@@ -1,11 +1,11 @@
 # Garmin Health Insights API
 
-A FastAPI backend that integrates with Garmin health data and provides AI-powered health insights using the Meditron LLM.
+A FastAPI backend that integrates with Garmin health data and provides AI-powered health insights using Google's Gemini AI.
 
 ## Features
 
 - Ingest health metrics from Garmin devices
-- Generate AI-powered health insights
+- Generate AI-powered health insights using Google Gemini
 - Daily and historical health data analysis
 - RESTful API endpoints for easy integration
 
@@ -14,7 +14,7 @@ A FastAPI backend that integrates with Garmin health data and provides AI-powere
 - Python 3.12
 - Garmin Connect account
 - Garmin device with health tracking capabilities
-- CUDA-capable GPU (recommended for LLM inference)
+- Google Cloud API key with Gemini API access
 
 ## Installation
 
@@ -34,8 +34,7 @@ pipenv install
 GARMIN_DB_PATH=garmin.db
 API_HOST=0.0.0.0
 API_PORT=8000
-LLM_MODEL_NAME=epfl-llm/meditron-7b
-LLM_DEVICE=cuda  # or cpu
+GOOGLE_API_KEY=your_google_api_key_here
 ```
 
 ## Usage

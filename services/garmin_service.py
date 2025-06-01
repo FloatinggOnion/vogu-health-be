@@ -82,14 +82,32 @@ class GarminService:
 
     async def get_recent_metrics(self, days: int = 7) -> List[Dict[str, Any]]:
         """Get health metrics from the last N days"""
-        end_date = datetime.now(timezone.utc)
-        start_date = end_date - timedelta(days=days)
-        
         try:
             metrics = []
             
-            # Load and process sleep data
+            # Load all data first to find the most recent date
             sleep_data = self._load_json_data(self.sleep_file)
+            weight_data = self._load_json_data(self.weight_file)
+            heart_rate_data = self._load_json_data(self.heart_rate_file)
+            
+            # Find the most recent date across all data
+            all_dates = []
+            for data in [sleep_data, weight_data, heart_rate_data]:
+                for item in data:
+                    if 'startTime' in item:
+                        all_dates.append(datetime.fromisoformat(item['startTime'].replace('Z', '+00:00')))
+                    elif 'timestamp' in item:
+                        all_dates.append(datetime.fromisoformat(item['timestamp'].replace('Z', '+00:00')))
+            
+            if not all_dates:
+                logger.warning("No dates found in the data")
+                return []
+            
+            # Use the most recent date as the reference point
+            end_date = max(all_dates)
+            start_date = end_date - timedelta(days=days)
+            
+            # Process sleep data
             for sleep in sleep_data:
                 if 'startTime' in sleep:
                     sleep_time = datetime.fromisoformat(sleep['startTime'].replace('Z', '+00:00'))
@@ -107,8 +125,7 @@ class GarminService:
                             "sleep_score": sleep.get('sleepScore')
                         })
             
-            # Load and process weight data
-            weight_data = self._load_json_data(self.weight_file)
+            # Process weight data
             for weight in weight_data:
                 if 'timestamp' in weight:
                     weight_time = datetime.fromisoformat(weight['timestamp'].replace('Z', '+00:00'))
@@ -125,8 +142,7 @@ class GarminService:
                             "bone_mass": weight.get('boneMass')
                         })
             
-            # Load and process heart rate data
-            heart_rate_data = self._load_json_data(self.heart_rate_file)
+            # Process heart rate data
             for hr in heart_rate_data:
                 if 'timestamp' in hr:
                     hr_time = datetime.fromisoformat(hr['timestamp'].replace('Z', '+00:00'))
@@ -146,6 +162,7 @@ class GarminService:
             self._save_to_storage('weight', weight_data)
             self._save_to_storage('heart_rate', heart_rate_data)
             
+            logger.info(f"Found {len(metrics)} metrics between {start_date} and {end_date}")
             return metrics
             
         except Exception as e:
@@ -218,8 +235,8 @@ class GarminService:
                 },
                 "heart_rate": {
                     "average": 0,
-                    "highest": 0,
-                    "lowest": float('inf')
+                    "highest": None,
+                    "lowest": None
                 },
                 "weight": {
                     "average": 0,
@@ -236,13 +253,16 @@ class GarminService:
                 
                 elif metric["metric_type"] == "heart_rate":
                     trends["heart_rate"]["average"] += metric["value"]
-                    trends["heart_rate"]["highest"] = max(trends["heart_rate"]["highest"], metric["value"])
-                    trends["heart_rate"]["lowest"] = min(trends["heart_rate"]["lowest"], metric["value"])
+                    # Update highest and lowest only if we have a value
+                    if trends["heart_rate"]["highest"] is None or metric["value"] > trends["heart_rate"]["highest"]:
+                        trends["heart_rate"]["highest"] = metric["value"]
+                    if trends["heart_rate"]["lowest"] is None or metric["value"] < trends["heart_rate"]["lowest"]:
+                        trends["heart_rate"]["lowest"] = metric["value"]
                 
                 elif metric["metric_type"] == "weight":
                     trends["weight"]["average"] += metric["value"]
                     trends["weight"]["trend"].append({
-                        "date": metric["timestamp"],
+                        "date": metric["timestamp"].isoformat(),
                         "weight": metric["value"]
                     })
             
@@ -251,8 +271,12 @@ class GarminService:
             if days_count > 0:
                 trends["sleep"]["average_duration"] /= days_count
                 trends["sleep"]["average_quality"] /= days_count
-                trends["heart_rate"]["average"] /= len([m for m in metrics if m["metric_type"] == "heart_rate"])
-                trends["weight"]["average"] /= len([m for m in metrics if m["metric_type"] == "weight"])
+                heart_rate_count = len([m for m in metrics if m["metric_type"] == "heart_rate"])
+                if heart_rate_count > 0:
+                    trends["heart_rate"]["average"] /= heart_rate_count
+                weight_count = len([m for m in metrics if m["metric_type"] == "weight"])
+                if weight_count > 0:
+                    trends["weight"]["average"] /= weight_count
             
             return trends
             
