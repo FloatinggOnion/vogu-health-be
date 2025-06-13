@@ -1,19 +1,20 @@
-# Garmin Health Insights API
+# Health Data API
 
-A FastAPI backend that integrates with Garmin health data and provides AI-powered health insights using Google's Gemini AI.
+A FastAPI backend that provides a modern health data tracking and insights service, powered by Google's Gemini AI.
 
 ## Features
 
-- Ingest health metrics from Garmin devices
+- Track sleep, heart rate, and weight metrics
+- Store health data in SQLite database
 - Generate AI-powered health insights using Google Gemini
 - Daily and historical health data analysis
 - RESTful API endpoints for easy integration
+- User authentication and data privacy
+- Offline-first data storage
 
 ## Prerequisites
 
 - Python 3.12
-- Garmin Connect account
-- Garmin device with health tracking capabilities
 - Google Cloud API key with Gemini API access
 
 ## Installation
@@ -31,10 +32,10 @@ pipenv install
 
 3. Create a `.env` file with the following configuration:
 ```
-GARMIN_DB_PATH=garmin.db
 API_HOST=0.0.0.0
 API_PORT=8000
 GOOGLE_API_KEY=your_google_api_key_here
+SECRET_KEY=your_secret_key_here  # For JWT token generation
 ```
 
 ## Usage
@@ -48,23 +49,85 @@ pipenv run uvicorn main:app --reload
 
 ## API Endpoints
 
-- `GET /`: Root endpoint
-- `GET /health`: Health check endpoint
-- `GET /metrics/recent`: Get recent health metrics (default: last 7 days)
-- `GET /metrics/daily/{date}`: Get daily health metrics
-- `GET /insights/recent`: Get AI insights for recent health metrics
-- `GET /insights/daily/{date}`: Get AI insights for specific day
+### Data Submission
+- `POST /api/v1/health-data/sleep`: Submit sleep data
+- `POST /api/v1/health-data/heart-rate`: Submit heart rate data
+- `POST /api/v1/health-data/weight`: Submit weight data
 
-## Example Usage
+### Data Retrieval
+- `GET /api/v1/health-data/{metric_type}`: Get health data for a specific metric type
+- `GET /api/v1/health-data/daily/{date}`: Get daily health summary
 
-Get recent health insights:
-```bash
-curl "http://localhost:8000/insights/recent?days=7"
+### Insights
+- `GET /api/v1/insights/recent`: Get AI insights for recent health metrics
+- `GET /api/v1/insights/daily/{date}`: Get AI insights for specific day
+
+## Data Models
+
+### Sleep Data
+```json
+{
+    "start_time": "2024-03-20T22:00:00Z",
+    "end_time": "2024-03-21T06:00:00Z",
+    "quality": 85,
+    "phases": {
+        "deep": 120,
+        "light": 240,
+        "rem": 90,
+        "awake": 30
+    },
+    "source": "mobile_app"
+}
 ```
 
-Get daily insights for a specific date:
+### Heart Rate Data
+```json
+{
+    "timestamp": "2024-03-21T12:00:00Z",
+    "value": 75,
+    "resting_rate": 60,
+    "activity_type": "walking",
+    "source": "mobile_app"
+}
+```
+
+### Weight Data
+```json
+{
+    "timestamp": "2024-03-21T08:00:00Z",
+    "value": 70.5,
+    "bmi": 22.5,
+    "body_composition": {
+        "body_fat": 18.5,
+        "muscle_mass": 40.2,
+        "water_percentage": 55.0,
+        "bone_mass": 3.2
+    },
+    "source": "mobile_app"
+}
+```
+
+## Development
+
+### Running Tests
 ```bash
-curl "http://localhost:8000/insights/daily/2024-05-01"
+pipenv run pytest
+```
+
+### Code Formatting
+```bash
+pipenv run black .
+pipenv run isort .
+```
+
+### Type Checking
+```bash
+pipenv run mypy .
+```
+
+### Linting
+```bash
+pipenv run flake8
 ```
 
 ## Contributing

@@ -4,16 +4,24 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
-garmindb = "*"
 fastapi = {extras = ["standard"], version = "*"}
 python-dotenv = "*"
 uvicorn = "*"
 pydantic = "*"
-numpy = "<2"
-idbutils = "*"
 google-generativeai = "*"
+sqlalchemy = "*"
+aiosqlite = "*"
+python-multipart = "*"
+python-jose = {extras = ["cryptography"], version = "*"}
+passlib = {extras = ["bcrypt"], version = "*"}
 
 [dev-packages]
+pytest = "*"
+pytest-asyncio = "*"
+black = "*"
+isort = "*"
+flake8 = "*"
+mypy = "*"
 
 [requires]
 python_version = "3.12"

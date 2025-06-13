@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Literal
 from pydantic import BaseModel, Field, validator
 from enum import Enum
 
@@ -64,6 +64,6 @@ class HealthDataResponse(BaseModel):
     insights: Optional[Dict[str, Any]] = Field(None, description="AI-generated insights")
 
 class HealthDataError(BaseModel):
-    status: str = Field("error", const=True)
+    status: Literal["error"] = "error"
     error: str = Field(..., description="Error message")
     details: Optional[Dict[str, Any]] = Field(None, description="Error details") 
