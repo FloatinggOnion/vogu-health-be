@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any, Optional
 import json
 import logging
@@ -27,7 +27,6 @@ class HealthDataService:
             cursor.execute('''
             CREATE TABLE IF NOT EXISTS sleep (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id TEXT NOT NULL,
                 start_time TIMESTAMP NOT NULL,
                 end_time TIMESTAMP NOT NULL,
                 quality INTEGER NOT NULL,
@@ -44,7 +43,6 @@ class HealthDataService:
             cursor.execute('''
             CREATE TABLE IF NOT EXISTS heart_rate (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id TEXT NOT NULL,
                 timestamp TIMESTAMP NOT NULL,
                 value INTEGER NOT NULL,
                 resting_rate INTEGER,
@@ -58,7 +56,6 @@ class HealthDataService:
             cursor.execute('''
             CREATE TABLE IF NOT EXISTS weight (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id TEXT NOT NULL,
                 timestamp TIMESTAMP NOT NULL,
                 value REAL NOT NULL,
                 bmi REAL,
@@ -72,9 +69,9 @@ class HealthDataService:
             ''')
             
             # Create indexes
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_sleep_user_time ON sleep(user_id, start_time)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_hr_user_time ON heart_rate(user_id, timestamp)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_weight_user_time ON weight(user_id, timestamp)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_sleep_time ON sleep(start_time)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_hr_time ON heart_rate(timestamp)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_weight_time ON weight(timestamp)')
             
             conn.commit()
     
@@ -85,12 +82,11 @@ class HealthDataService:
                 cursor = conn.cursor()
                 cursor.execute('''
                 INSERT INTO sleep (
-                    user_id, start_time, end_time, quality,
+                    start_time, end_time, quality,
                     deep_sleep, light_sleep, rem_sleep, awake_time,
                     source
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (
-                    data.user_id,
                     data.start_time.isoformat(),
                     data.end_time.isoformat(),
                     data.quality,
@@ -120,11 +116,10 @@ class HealthDataService:
                 cursor = conn.cursor()
                 cursor.execute('''
                 INSERT INTO heart_rate (
-                    user_id, timestamp, value,
+                    timestamp, value,
                     resting_rate, activity_type, source
-                ) VALUES (?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?)
                 ''', (
-                    data.user_id,
                     data.timestamp.isoformat(),
                     data.value,
                     data.resting_rate,
@@ -151,12 +146,11 @@ class HealthDataService:
                 cursor = conn.cursor()
                 cursor.execute('''
                 INSERT INTO weight (
-                    user_id, timestamp, value, bmi,
+                    timestamp, value, bmi,
                     body_fat, muscle_mass, water_percentage,
                     bone_mass, source
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (
-                    data.user_id,
                     data.timestamp.isoformat(),
                     data.value,
                     data.bmi,
@@ -181,13 +175,12 @@ class HealthDataService:
     
     async def get_recent_data(
         self,
-        user_id: str,
         metric_type: MetricType,
         days: int = 7
     ) -> List[Dict[str, Any]]:
         """Get recent health data for a specific metric type"""
         try:
-            end_date = datetime.now()
+            end_date = datetime.now(timezone.utc)
             start_date = end_date - timedelta(days=days)
             
             with sqlite3.connect(self.db_path) as conn:
@@ -197,27 +190,27 @@ class HealthDataService:
                 if metric_type == MetricType.SLEEP:
                     cursor.execute('''
                     SELECT * FROM sleep
-                    WHERE user_id = ? AND start_time >= ?
+                    WHERE start_time >= ?
                     ORDER BY start_time DESC
-                    ''', (user_id, start_date.isoformat()))
+                    ''', (start_date.isoformat(),))
                     
                     return [dict(row) for row in cursor.fetchall()]
                 
                 elif metric_type == MetricType.HEART_RATE:
                     cursor.execute('''
                     SELECT * FROM heart_rate
-                    WHERE user_id = ? AND timestamp >= ?
+                    WHERE timestamp >= ?
                     ORDER BY timestamp DESC
-                    ''', (user_id, start_date.isoformat()))
+                    ''', (start_date.isoformat(),))
                     
                     return [dict(row) for row in cursor.fetchall()]
                 
                 elif metric_type == MetricType.WEIGHT:
                     cursor.execute('''
                     SELECT * FROM weight
-                    WHERE user_id = ? AND timestamp >= ?
+                    WHERE timestamp >= ?
                     ORDER BY timestamp DESC
-                    ''', (user_id, start_date.isoformat()))
+                    ''', (start_date.isoformat(),))
                     
                     return [dict(row) for row in cursor.fetchall()]
                 
@@ -233,11 +226,13 @@ class HealthDataService:
     
     async def get_daily_summary(
         self,
-        user_id: str,
         date: datetime
     ) -> Dict[str, Any]:
         """Get a summary of health metrics for a specific day"""
         try:
+            # Ensure date is UTC-aware
+            if date.tzinfo is None:
+                date = date.replace(tzinfo=timezone.utc)
             end_date = date + timedelta(days=1)
             
             with sqlite3.connect(self.db_path) as conn:
@@ -247,22 +242,22 @@ class HealthDataService:
                 # Get sleep data
                 cursor.execute('''
                 SELECT * FROM sleep
-                WHERE user_id = ? AND start_time >= ? AND start_time < ?
-                ''', (user_id, date.isoformat(), end_date.isoformat()))
+                WHERE start_time >= ? AND start_time < ?
+                ''', (date.isoformat(), end_date.isoformat()))
                 sleep_data = [dict(row) for row in cursor.fetchall()]
                 
                 # Get heart rate data
                 cursor.execute('''
                 SELECT * FROM heart_rate
-                WHERE user_id = ? AND timestamp >= ? AND timestamp < ?
-                ''', (user_id, date.isoformat(), end_date.isoformat()))
+                WHERE timestamp >= ? AND timestamp < ?
+                ''', (date.isoformat(), end_date.isoformat()))
                 heart_rate_data = [dict(row) for row in cursor.fetchall()]
                 
                 # Get weight data
                 cursor.execute('''
                 SELECT * FROM weight
-                WHERE user_id = ? AND timestamp >= ? AND timestamp < ?
-                ''', (user_id, date.isoformat(), end_date.isoformat()))
+                WHERE timestamp >= ? AND timestamp < ?
+                ''', (date.isoformat(), end_date.isoformat()))
                 weight_data = [dict(row) for row in cursor.fetchall()]
                 
                 return {

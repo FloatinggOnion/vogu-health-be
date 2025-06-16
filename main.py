@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Depends, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any, Optional
 import logging
 from services.health_data.service import HealthDataService
@@ -29,19 +29,12 @@ app.add_middleware(
 health_data_service = HealthDataService()
 llm_service = LLMService()
 
-# Mock user authentication (replace with your actual auth system)
-async def get_current_user() -> str:
-    """Mock function to get current user ID"""
-    return "user_123"  # Replace with actual user ID from your auth system
-
 @app.post("/api/v1/health-data/sleep")
 async def submit_sleep_data(
-    data: SleepData,
-    user_id: str = Depends(get_current_user)
+    data: SleepData
 ) -> HealthDataResponse:
     """Submit sleep data"""
     try:
-        data.user_id = user_id  # Ensure user_id is set
         return await health_data_service.store_sleep_data(data)
     except HealthDataError as e:
         raise HTTPException(status_code=400, detail=e.dict())
@@ -51,12 +44,10 @@ async def submit_sleep_data(
 
 @app.post("/api/v1/health-data/heart-rate")
 async def submit_heart_rate_data(
-    data: HeartRateData,
-    user_id: str = Depends(get_current_user)
+    data: HeartRateData
 ) -> HealthDataResponse:
     """Submit heart rate data"""
     try:
-        data.user_id = user_id
         return await health_data_service.store_heart_rate_data(data)
     except HealthDataError as e:
         raise HTTPException(status_code=400, detail=e.dict())
@@ -66,12 +57,10 @@ async def submit_heart_rate_data(
 
 @app.post("/api/v1/health-data/weight")
 async def submit_weight_data(
-    data: WeightData,
-    user_id: str = Depends(get_current_user)
+    data: WeightData
 ) -> HealthDataResponse:
     """Submit weight data"""
     try:
-        data.user_id = user_id
         return await health_data_service.store_weight_data(data)
     except HealthDataError as e:
         raise HTTPException(status_code=400, detail=e.dict())
@@ -82,12 +71,11 @@ async def submit_weight_data(
 @app.get("/api/v1/health-data/{metric_type}")
 async def get_health_data(
     metric_type: MetricType,
-    days: int = Query(7, ge=1, le=30),
-    user_id: str = Depends(get_current_user)
+    days: int = Query(7, ge=1, le=30)
 ) -> Dict[str, Any]:
     """Get health data for a specific metric type"""
     try:
-        data = await health_data_service.get_recent_data(user_id, metric_type, days)
+        data = await health_data_service.get_recent_data(metric_type, days)
         return {
             "status": "success",
             "data": data
@@ -100,12 +88,14 @@ async def get_health_data(
 
 @app.get("/api/v1/health-data/daily/{date}")
 async def get_daily_summary(
-    date: datetime,
-    user_id: str = Depends(get_current_user)
+    date: datetime
 ) -> Dict[str, Any]:
     """Get daily health summary"""
     try:
-        summary = await health_data_service.get_daily_summary(user_id, date)
+        # Ensure date is UTC-aware
+        if date.tzinfo is None:
+            date = date.replace(tzinfo=timezone.utc)
+        summary = await health_data_service.get_daily_summary(date)
         return {
             "status": "success",
             "data": summary
@@ -118,15 +108,14 @@ async def get_daily_summary(
 
 @app.get("/api/v1/insights/recent")
 async def get_recent_insights(
-    days: int = Query(7, ge=1, le=30),
-    user_id: str = Depends(get_current_user)
+    days: int = Query(7, ge=1, le=30)
 ) -> Dict[str, Any]:
     """Get AI-powered health insights for recent data"""
     try:
         # Get data for all metric types
         metrics = []
         for metric_type in MetricType:
-            data = await health_data_service.get_recent_data(user_id, metric_type, days)
+            data = await health_data_service.get_recent_data(metric_type, days)
             metrics.extend(data)
         
         # Generate insights using LLM
@@ -141,13 +130,15 @@ async def get_recent_insights(
 
 @app.get("/api/v1/insights/daily/{date}")
 async def get_daily_insights(
-    date: datetime,
-    user_id: str = Depends(get_current_user)
+    date: datetime
 ) -> Dict[str, Any]:
     """Get AI-powered health insights for a specific day"""
     try:
+        # Ensure date is UTC-aware
+        if date.tzinfo is None:
+            date = date.replace(tzinfo=timezone.utc)
         # Get daily summary
-        summary = await health_data_service.get_daily_summary(user_id, date)
+        summary = await health_data_service.get_daily_summary(date)
         
         # Convert summary to metrics format
         metrics = []

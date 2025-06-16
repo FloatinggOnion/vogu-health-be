@@ -9,7 +9,6 @@ A FastAPI backend that provides a modern health data tracking and insights servi
 - Generate AI-powered health insights using Google Gemini
 - Daily and historical health data analysis
 - RESTful API endpoints for easy integration
-- User authentication and data privacy
 - Offline-first data storage
 
 ## Prerequisites

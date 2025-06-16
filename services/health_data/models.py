@@ -7,7 +7,6 @@ class MetricType(str, Enum):
     SLEEP = "sleep"
     HEART_RATE = "heart_rate"
     WEIGHT = "weight"
-    BODY_COMPOSITION = "body_composition"
 
 class SleepPhase(BaseModel):
     deep: int = Field(..., description="Deep sleep duration in minutes")
@@ -27,7 +26,6 @@ class SleepData(BaseModel):
     quality: int = Field(..., ge=0, le=100, description="Sleep quality score (0-100)")
     phases: SleepPhase = Field(..., description="Sleep phases")
     source: str = Field(..., description="Data source (e.g., 'mobile_app', 'manual')")
-    user_id: str = Field(..., description="User identifier")
     
     @validator('end_time')
     def validate_times(cls, v, values):
@@ -41,7 +39,6 @@ class HeartRateData(BaseModel):
     resting_rate: Optional[int] = Field(None, ge=30, le=100, description="Resting heart rate in BPM")
     activity_type: Optional[str] = Field(None, description="Type of activity during measurement")
     source: str = Field(..., description="Data source")
-    user_id: str = Field(..., description="User identifier")
 
 class BodyComposition(BaseModel):
     body_fat: float = Field(..., ge=0, le=100, description="Body fat percentage")
@@ -55,7 +52,6 @@ class WeightData(BaseModel):
     bmi: Optional[float] = Field(None, gt=0, description="Body Mass Index")
     body_composition: Optional[BodyComposition] = Field(None, description="Body composition metrics")
     source: str = Field(..., description="Data source")
-    user_id: str = Field(..., description="User identifier")
 
 class HealthDataResponse(BaseModel):
     status: str = Field(..., description="Response status")
@@ -63,7 +59,16 @@ class HealthDataResponse(BaseModel):
     message: Optional[str] = Field(None, description="Response message")
     insights: Optional[Dict[str, Any]] = Field(None, description="AI-generated insights")
 
-class HealthDataError(BaseModel):
-    status: Literal["error"] = "error"
-    error: str = Field(..., description="Error message")
-    details: Optional[Dict[str, Any]] = Field(None, description="Error details") 
+class HealthDataError(Exception):
+    """Custom exception for health data errors"""
+    def __init__(self, error: str, details: Optional[Dict[str, Any]] = None):
+        self.error = error
+        self.details = details
+        super().__init__(self.error)
+    
+    def dict(self):
+        return {
+            "status": "error",
+            "error": self.error,
+            "details": self.details
+        } 
