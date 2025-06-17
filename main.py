@@ -29,6 +29,10 @@ app.add_middleware(
 health_data_service = HealthDataService()
 llm_service = LLMService()
 
+@app.get("/")
+def hello_world():
+    return {"message": "Hello World"}
+
 @app.post("/api/v1/health-data/sleep")
 async def submit_sleep_data(
     data: SleepData
@@ -115,9 +119,84 @@ async def get_recent_insights(
         # Get data for all metric types
         metrics = []
         for metric_type in MetricType:
-            data = await health_data_service.get_recent_data(metric_type, days)
-            metrics.extend(data)
-        
+            try:
+                data = await health_data_service.get_recent_data(metric_type, days)
+                if not data:
+                    logger.info(f"No {metric_type.value} data available for the last {days} days")
+                    continue
+
+                if metric_type == MetricType.SLEEP:
+                    for sleep in data:
+                        try:
+                            if not isinstance(sleep.get("phases"), dict):
+                                logger.warning(f"Invalid sleep phases data: {sleep}")
+                                continue
+                            
+                            phases = sleep["phases"]
+                            total_sleep = phases.get("deep", 0) + phases.get("light", 0) + phases.get("rem", 0)
+                            metrics.append({
+                                "metric_type": metric_type.value,
+                                "totalSleepTime": total_sleep,
+                                "sleepQuality": sleep.get("quality", 0),
+                                "deepSleepTime": phases.get("deep", 0),
+                                "remSleepTime": phases.get("rem", 0)
+                            })
+                        except Exception as e:
+                            logger.error(f"Error processing sleep data: {str(e)}")
+                            continue
+
+                elif metric_type == MetricType.HEART_RATE:
+                    for hr in data:
+                        try:
+                            metrics.append({
+                                "metric_type": metric_type.value,
+                                "heartRate": hr.get("value", 0),
+                                "restingHeartRate": hr.get("resting_rate", 0),
+                                "activityType": hr.get("activity_type", "unknown")
+                            })
+                        except Exception as e:
+                            logger.error(f"Error processing heart rate data: {str(e)}")
+                            continue
+
+                elif metric_type == MetricType.WEIGHT:
+                    for weight in data:
+                        try:
+                            body_comp = weight.get("body_composition", {}) or {}
+                            metrics.append({
+                                "metric_type": metric_type.value,
+                                "weight": weight.get("value", 0),
+                                "bmi": weight.get("bmi", 0),
+                                "bodyFat": body_comp.get("body_fat", 0),
+                                "muscleMass": body_comp.get("muscle_mass", 0),
+                                "waterPercentage": body_comp.get("water_percentage", 0)
+                            })
+                        except Exception as e:
+                            logger.error(f"Error processing weight data: {str(e)}")
+                            continue
+
+            except Exception as e:
+                logger.error(f"Error retrieving {metric_type.value} data: {str(e)}")
+                continue
+
+        if not metrics:
+            logger.info("No health data available for insights")
+            return {
+                "status": "success",
+                "insights": {
+                    "summary": "No health data available for the selected period. Start tracking your health metrics to get personalized insights.",
+                    "status": "fair",
+                    "highlights": [
+                        "Ready to start tracking your health",
+                        "Connect your device to begin monitoring"
+                    ],
+                    "recommendations": [
+                        "Set up your health tracking device",
+                        "Start recording your daily health metrics"
+                    ],
+                    "next_steps": "Begin tracking your health metrics today"
+                }
+            }
+
         # Generate insights using LLM
         insights = await llm_service.get_health_insights(metrics)
         return {
@@ -126,7 +205,10 @@ async def get_recent_insights(
         }
     except Exception as e:
         logger.error(f"Error generating insights: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate insights: {str(e)}"
+        )
 
 @app.get("/api/v1/insights/daily/{date}")
 async def get_daily_insights(
@@ -137,43 +219,98 @@ async def get_daily_insights(
         # Ensure date is UTC-aware
         if date.tzinfo is None:
             date = date.replace(tzinfo=timezone.utc)
+        
         # Get daily summary
         summary = await health_data_service.get_daily_summary(date)
+        if not summary:
+            logger.info(f"No health data available for {date.isoformat()}")
+            return {
+                "status": "success",
+                "insights": {
+                    "summary": f"No health data available for {date.date()}. Start tracking your health metrics to get personalized insights.",
+                    "status": "fair",
+                    "highlights": [
+                        "Ready to start tracking your health",
+                        "Connect your device to begin monitoring"
+                    ],
+                    "recommendations": [
+                        "Set up your health tracking device",
+                        "Start recording your daily health metrics"
+                    ],
+                    "next_steps": "Begin tracking your health metrics today"
+                }
+            }
         
         # Convert summary to metrics format
         metrics = []
+        
+        # Process sleep data
         for sleep in summary.get("sleep", []):
-            metrics.append({
-                "timestamp": datetime.fromisoformat(sleep["start_time"]),
-                "metric_type": "sleep",
-                "value": sleep["deep_sleep"] + sleep["light_sleep"] + sleep["rem_sleep"],
-                "quality": sleep["quality"],
-                "deep_sleep_minutes": sleep["deep_sleep"],
-                "light_sleep_minutes": sleep["light_sleep"],
-                "rem_sleep_minutes": sleep["rem_sleep"],
-                "awake_minutes": sleep["awake_time"]
-            })
+            try:
+                if not isinstance(sleep.get("phases"), dict):
+                    logger.warning(f"Invalid sleep phases data: {sleep}")
+                    continue
+                
+                phases = sleep["phases"]
+                total_sleep = phases.get("deep", 0) + phases.get("light", 0) + phases.get("rem", 0)
+                metrics.append({
+                    "metric_type": MetricType.SLEEP.value,
+                    "totalSleepTime": total_sleep,
+                    "sleepQuality": sleep.get("quality", 0),
+                    "deepSleepTime": phases.get("deep", 0),
+                    "remSleepTime": phases.get("rem", 0)
+                })
+            except Exception as e:
+                logger.error(f"Error processing sleep data: {str(e)}")
+                continue
         
+        # Process heart rate data
         for hr in summary.get("heart_rate", []):
-            metrics.append({
-                "timestamp": datetime.fromisoformat(hr["timestamp"]),
-                "metric_type": "heart_rate",
-                "value": hr["value"],
-                "resting_heart_rate": hr.get("resting_rate"),
-                "activity_type": hr.get("activity_type")
-            })
+            try:
+                metrics.append({
+                    "metric_type": MetricType.HEART_RATE.value,
+                    "heartRate": hr.get("value", 0),
+                    "restingHeartRate": hr.get("resting_rate", 0),
+                    "activityType": hr.get("activity_type", "unknown")
+                })
+            except Exception as e:
+                logger.error(f"Error processing heart rate data: {str(e)}")
+                continue
         
+        # Process weight data
         for weight in summary.get("weight", []):
-            metrics.append({
-                "timestamp": datetime.fromisoformat(weight["timestamp"]),
-                "metric_type": "weight",
-                "value": weight["value"],
-                "bmi": weight.get("bmi"),
-                "body_fat": weight.get("body_fat"),
-                "muscle_mass": weight.get("muscle_mass"),
-                "water_percentage": weight.get("water_percentage"),
-                "bone_mass": weight.get("bone_mass")
-            })
+            try:
+                body_comp = weight.get("body_composition", {}) or {}
+                metrics.append({
+                    "metric_type": MetricType.WEIGHT.value,
+                    "weight": weight.get("value", 0),
+                    "bmi": weight.get("bmi", 0),
+                    "bodyFat": body_comp.get("body_fat", 0),
+                    "muscleMass": body_comp.get("muscle_mass", 0),
+                    "waterPercentage": body_comp.get("water_percentage", 0)
+                })
+            except Exception as e:
+                logger.error(f"Error processing weight data: {str(e)}")
+                continue
+        
+        if not metrics:
+            logger.info(f"No valid health data available for {date.isoformat()}")
+            return {
+                "status": "success",
+                "insights": {
+                    "summary": f"No valid health data available for {date.date()}. Please ensure your health tracking device is properly connected.",
+                    "status": "fair",
+                    "highlights": [
+                        "Device connection needed",
+                        "Health tracking ready to start"
+                    ],
+                    "recommendations": [
+                        "Check your device connection",
+                        "Verify your health tracking settings"
+                    ],
+                    "next_steps": "Connect your health tracking device"
+                }
+            }
         
         # Generate insights
         insights = await llm_service.get_health_insights(metrics)
@@ -183,7 +320,10 @@ async def get_daily_insights(
         }
     except Exception as e:
         logger.error(f"Error generating daily insights: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate daily insights: {str(e)}"
+        )
 
 if __name__ == "__main__":
     import uvicorn

@@ -189,30 +189,97 @@ class HealthDataService:
                 
                 if metric_type == MetricType.SLEEP:
                     cursor.execute('''
-                    SELECT * FROM sleep
+                    SELECT 
+                        id,
+                        start_time,
+                        end_time,
+                        quality,
+                        deep_sleep,
+                        light_sleep,
+                        rem_sleep,
+                        awake_time,
+                        source,
+                        created_at
+                    FROM sleep
                     WHERE start_time >= ?
                     ORDER BY start_time DESC
                     ''', (start_date.isoformat(),))
                     
-                    return [dict(row) for row in cursor.fetchall()]
+                    rows = cursor.fetchall()
+                    return [{
+                        "id": row["id"],
+                        "start_time": row["start_time"],
+                        "end_time": row["end_time"],
+                        "quality": row["quality"],
+                        "phases": {
+                            "deep": row["deep_sleep"],
+                            "light": row["light_sleep"],
+                            "rem": row["rem_sleep"],
+                            "awake": row["awake_time"]
+                        },
+                        "source": row["source"],
+                        "created_at": row["created_at"]
+                    } for row in rows]
                 
                 elif metric_type == MetricType.HEART_RATE:
                     cursor.execute('''
-                    SELECT * FROM heart_rate
+                    SELECT 
+                        id,
+                        timestamp,
+                        value,
+                        resting_rate,
+                        activity_type,
+                        source,
+                        created_at
+                    FROM heart_rate
                     WHERE timestamp >= ?
                     ORDER BY timestamp DESC
                     ''', (start_date.isoformat(),))
                     
-                    return [dict(row) for row in cursor.fetchall()]
+                    rows = cursor.fetchall()
+                    return [{
+                        "id": row["id"],
+                        "timestamp": row["timestamp"],
+                        "value": row["value"],
+                        "resting_rate": row["resting_rate"],
+                        "activity_type": row["activity_type"],
+                        "source": row["source"],
+                        "created_at": row["created_at"]
+                    } for row in rows]
                 
                 elif metric_type == MetricType.WEIGHT:
                     cursor.execute('''
-                    SELECT * FROM weight
+                    SELECT 
+                        id,
+                        timestamp,
+                        value,
+                        bmi,
+                        body_fat,
+                        muscle_mass,
+                        water_percentage,
+                        bone_mass,
+                        source,
+                        created_at
+                    FROM weight
                     WHERE timestamp >= ?
                     ORDER BY timestamp DESC
                     ''', (start_date.isoformat(),))
                     
-                    return [dict(row) for row in cursor.fetchall()]
+                    rows = cursor.fetchall()
+                    return [{
+                        "id": row["id"],
+                        "timestamp": row["timestamp"],
+                        "value": row["value"],
+                        "bmi": row["bmi"],
+                        "body_composition": {
+                            "body_fat": row["body_fat"],
+                            "muscle_mass": row["muscle_mass"],
+                            "water_percentage": row["water_percentage"],
+                            "bone_mass": row["bone_mass"]
+                        } if row["body_fat"] is not None else None,
+                        "source": row["source"],
+                        "created_at": row["created_at"]
+                    } for row in rows]
                 
                 else:
                     raise ValueError(f"Unsupported metric type: {metric_type}")
@@ -241,24 +308,91 @@ class HealthDataService:
                 
                 # Get sleep data
                 cursor.execute('''
-                SELECT * FROM sleep
+                SELECT 
+                    id,
+                    start_time,
+                    end_time,
+                    quality,
+                    deep_sleep,
+                    light_sleep,
+                    rem_sleep,
+                    awake_time,
+                    source,
+                    created_at
+                FROM sleep
                 WHERE start_time >= ? AND start_time < ?
                 ''', (date.isoformat(), end_date.isoformat()))
-                sleep_data = [dict(row) for row in cursor.fetchall()]
+                sleep_rows = cursor.fetchall()
+                sleep_data = [{
+                    "id": row["id"],
+                    "start_time": row["start_time"],
+                    "end_time": row["end_time"],
+                    "quality": row["quality"],
+                    "phases": {
+                        "deep": row["deep_sleep"],
+                        "light": row["light_sleep"],
+                        "rem": row["rem_sleep"],
+                        "awake": row["awake_time"]
+                    },
+                    "source": row["source"],
+                    "created_at": row["created_at"]
+                } for row in sleep_rows]
                 
                 # Get heart rate data
                 cursor.execute('''
-                SELECT * FROM heart_rate
+                SELECT 
+                    id,
+                    timestamp,
+                    value,
+                    resting_rate,
+                    activity_type,
+                    source,
+                    created_at
+                FROM heart_rate
                 WHERE timestamp >= ? AND timestamp < ?
                 ''', (date.isoformat(), end_date.isoformat()))
-                heart_rate_data = [dict(row) for row in cursor.fetchall()]
+                hr_rows = cursor.fetchall()
+                heart_rate_data = [{
+                    "id": row["id"],
+                    "timestamp": row["timestamp"],
+                    "value": row["value"],
+                    "resting_rate": row["resting_rate"],
+                    "activity_type": row["activity_type"],
+                    "source": row["source"],
+                    "created_at": row["created_at"]
+                } for row in hr_rows]
                 
                 # Get weight data
                 cursor.execute('''
-                SELECT * FROM weight
+                SELECT 
+                    id,
+                    timestamp,
+                    value,
+                    bmi,
+                    body_fat,
+                    muscle_mass,
+                    water_percentage,
+                    bone_mass,
+                    source,
+                    created_at
+                FROM weight
                 WHERE timestamp >= ? AND timestamp < ?
                 ''', (date.isoformat(), end_date.isoformat()))
-                weight_data = [dict(row) for row in cursor.fetchall()]
+                weight_rows = cursor.fetchall()
+                weight_data = [{
+                    "id": row["id"],
+                    "timestamp": row["timestamp"],
+                    "value": row["value"],
+                    "bmi": row["bmi"],
+                    "body_composition": {
+                        "body_fat": row["body_fat"],
+                        "muscle_mass": row["muscle_mass"],
+                        "water_percentage": row["water_percentage"],
+                        "bone_mass": row["bone_mass"]
+                    } if row["body_fat"] is not None else None,
+                    "source": row["source"],
+                    "created_at": row["created_at"]
+                } for row in weight_rows]
                 
                 return {
                     "date": date.isoformat(),
